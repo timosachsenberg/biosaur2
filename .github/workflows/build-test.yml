@@ -1,0 +1,61 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-cpp:
+    name: Build C++ TOPP Tool with OpenMS
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Miniconda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        auto-update-conda: true
+        auto-activate-base: false
+        activate-environment: biosaur2-build
+        python-version: "3.10"
+    
+    - name: Install OpenMS from conda
+      shell: bash -l {0}
+      run: |
+        conda install -c bioconda libopenms -y
+        
+    - name: Verify OpenMS installation
+      shell: bash -l {0}
+      run: |
+        conda list | grep -i openms
+        echo "Checking for OpenMS CMake files..."
+        find $CONDA_PREFIX -name "OpenMSConfig.cmake" 2>/dev/null | head -1 || echo "OpenMS CMake config not found in standard location"
+        
+    - name: Build Biosaur2 TOPP tool
+      shell: bash -l {0}
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        cmake --build . --parallel
+        
+    - name: Test Biosaur2 executable
+      shell: bash -l {0}
+      run: |
+        ./build/Biosaur2 --help
+        
+    - name: Display build info
+      shell: bash -l {0}
+      run: |
+        echo "Build completed successfully!"
+        ls -lh build/Biosaur2
