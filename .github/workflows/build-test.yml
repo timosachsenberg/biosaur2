@@ -32,12 +32,12 @@ jobs:
     - name: Install OpenMS from conda
       shell: bash -l {0}
       run: |
-        conda install -c conda-forge openms -y
+        conda install -c bioconda libopenms -y
         
     - name: Verify OpenMS installation
       shell: bash -l {0}
       run: |
-        conda list | grep openms
+        conda list | grep -i openms
         echo "Checking for OpenMS CMake files..."
         find $CONDA_PREFIX -name "OpenMSConfig.cmake" 2>/dev/null | head -1 || echo "OpenMS CMake config not found in standard location"
         
