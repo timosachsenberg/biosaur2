@@ -83,7 +83,7 @@ Biosaur2 -in input.mzML -out output.featureXML \
 | `-htol` | float | 8.0 | Mass accuracy in ppm for hills |
 | `-itol` | float | 8.0 | Mass accuracy in ppm for isotopes |
 | `-hvf` | float | 1.3 | Hill valley factor for splitting |
-| `-ivf` | float | 5.0 | Isotope valley factor |
+| `-ivf` | float | 5.0 | Isotope valley factor (reserved, not implemented) |
 | `-minlh` | int | 2 | Minimum number of scans per hill |
 | `-cmin` | int | 1 | Minimum charge state |
 | `-cmax` | int | 6 | Maximum charge state |

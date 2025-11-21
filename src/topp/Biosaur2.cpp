@@ -174,7 +174,7 @@ protected:
     registerDoubleOption_("hvf", "<value>", 1.3, "Hill valley factor for splitting hills", false);
     setMinFloat_("hvf", 1.0);
     
-    registerDoubleOption_("ivf", "<value>", 5.0, "Isotope valley factor for splitting isotope patterns", false);
+    registerDoubleOption_("ivf", "<value>", 5.0, "Isotope valley factor for splitting isotope patterns (reserved for future use, not currently implemented)", false);
     setMinFloat_("ivf", 1.0);
     
     registerIntOption_("minlh", "<value>", 2, "Minimum number of scans for a hill", false);
@@ -771,7 +771,9 @@ protected:
     double htol = getDoubleOption_("htol");
     double itol = getDoubleOption_("itol");
     double hvf = getDoubleOption_("hvf");
-    double ivf = getDoubleOption_("ivf");
+    // Note: ivf parameter is registered for API compatibility but not currently used
+    // It would be used for splitting isotope patterns at local minima (future enhancement)
+    // double ivf = getDoubleOption_("ivf");
     Size minlh = getIntOption_("minlh");
     int cmin = getIntOption_("cmin");
     int cmax = getIntOption_("cmax");

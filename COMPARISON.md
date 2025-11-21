@@ -28,7 +28,7 @@ This document compares the Python and C++ implementations of Biosaur2.
 | `-htol` | `-htol` | Mass accuracy for hills (ppm) |
 | `-itol` | `-itol` | Mass accuracy for isotopes (ppm) |
 | `-hvf` | `-hvf` | Hill valley factor |
-| `-ivf` | `-ivf` | Isotope valley factor |
+| `-ivf` | `-ivf` | Isotope valley factor (C++: parameter exists but not used) |
 | `-minlh` | `-minlh` | Minimum hill length |
 | `-cmin` | `-cmin` | Minimum charge state |
 | `-cmax` | `-cmax` | Maximum charge state |
