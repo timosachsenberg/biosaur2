@@ -195,11 +195,19 @@ protected:
     registerIntOption_("threads", "<value>", 1, "Number of threads for parallel processing (0 = auto-detect)", false);
     setMinInt_("threads", 0);
     
+    registerIntOption_("iuse", "<value>", 0, "Number of isotopes for intensity calculation (0=mono only, -1=all, 1=mono+first, etc.)", false);
+    setMinInt_("iuse", -1);
+    
     registerFlag_("nm", "Negative mode (affects neutral mass calculation)", false);
     
     registerFlag_("tof", "Enable TOF-specific intensity filtering", false);
     
     registerFlag_("use_hill_calib", "Enable automatic hill mass tolerance calibration", false);
+    
+    registerFlag_("write_hills", "Write intermediate hills to TSV file", false);
+    
+    registerOutputFile_("out_hills", "<file>", "", "Optional: output hills TSV file", false);
+    setValidFormats_("out_hills", ListUtils::create<String>("tsv"));
   }
 
   // Calculate ppm difference between two m/z values
@@ -724,7 +732,8 @@ protected:
                                                int min_charge,
                                                int max_charge,
                                                bool negative_mode,
-                                               double ivf)
+                                               double ivf,
+                                               int iuse)
   {
     vector<PeptideFeature> features;
     set<Size> used_hills;
@@ -830,6 +839,26 @@ protected:
             feature.rt_apex = mono_hill.rt_apex;
             feature.intensity_apex = mono_hill.intensity_apex;
             feature.intensity_sum = mono_hill.intensity_sum;
+            
+            // Add intensities from isotopes based on iuse parameter
+            if (iuse != 0)
+            {
+              int isotopes_to_add = (iuse == -1) ? isotopes.size() : min(static_cast<int>(isotopes.size()), iuse);
+              for (int iso_idx = 0; iso_idx < isotopes_to_add; ++iso_idx)
+              {
+                // Find the hill for this isotope
+                for (const auto& hill : hills)
+                {
+                  if (hill.hill_idx == isotopes[iso_idx].hill_idx)
+                  {
+                    feature.intensity_apex += hill.intensity_apex;
+                    feature.intensity_sum += hill.intensity_sum;
+                    break;
+                  }
+                }
+              }
+            }
+            
             feature.charge = charge;
             feature.n_isotopes = isotopes.size() + 1; // +1 for monoisotope
             feature.n_scans = mono_hill.length;
@@ -933,6 +962,31 @@ protected:
     return feature_map;
   }
 
+  // Write hills to TSV file
+  void writeHills(const vector<Hill>& hills, const String& filename)
+  {
+    ofstream out(filename);
+    
+    // Write header
+    out << "hill_idx\tmz\trtStart\trtEnd\trtApex\tintensityApex\tintensitySum\tnScans" << endl;
+    
+    // Write hills
+    for (const auto& hill : hills)
+    {
+      out << hill.hill_idx << "\t"
+          << hill.mz_median << "\t"
+          << hill.rt_start << "\t"
+          << hill.rt_end << "\t"
+          << hill.rt_apex << "\t"
+          << hill.intensity_apex << "\t"
+          << hill.intensity_sum << "\t"
+          << hill.length << endl;
+    }
+    
+    out.close();
+    OPENMS_LOG_INFO << "Wrote " << hills.size() << " hills to: " << filename << endl;
+  }
+
   ExitCodes main_(int, const char**) override
   {
     //-------------------------------------------------------------
@@ -941,6 +995,7 @@ protected:
     String in = getStringOption_("in");
     String out = getStringOption_("out");
     String out_tsv = getStringOption_("out_tsv");
+    String out_hills = getStringOption_("out_hills");
     
     double mini = getDoubleOption_("mini");
     double minmz = getDoubleOption_("minmz");
@@ -953,9 +1008,11 @@ protected:
     int cmin = getIntOption_("cmin");
     int cmax = getIntOption_("cmax");
     int threads = getIntOption_("threads");
+    int iuse = getIntOption_("iuse");
     bool negative_mode = getFlag_("nm");
     bool tof_mode = getFlag_("tof");
     bool use_hill_calib = getFlag_("use_hill_calib");
+    bool write_hills = getFlag_("write_hills");
     
     // Set number of threads for OpenMP
 #ifdef _OPENMP
@@ -1019,8 +1076,15 @@ protected:
     // Step 3: Split hills at valleys
     hills = splitHills(hills, hvf, minlh);
     
+    // Write hills if requested
+    if (write_hills || !out_hills.empty())
+    {
+      String hills_file = out_hills.empty() ? (out.prefix(".featureXML") + ".hills.tsv") : out_hills;
+      writeHills(hills, hills_file);
+    }
+    
     // Step 4: Detect isotope patterns
-    vector<PeptideFeature> features = detectIsotopePatterns(hills, itol, cmin, cmax, negative_mode, ivf);
+    vector<PeptideFeature> features = detectIsotopePatterns(hills, itol, cmin, cmax, negative_mode, ivf, iuse);
     
     //-------------------------------------------------------------
     // Writing output

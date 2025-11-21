@@ -14,7 +14,7 @@ This document compares the Python and C++ implementations of Biosaur2.
 ### C++ Implementation
 - **Language**: C++17
 - **Dependencies**: OpenMS library
-- **Performance**: Native compiled code, single-threaded
+- **Performance**: Native compiled code with OpenMP multithreading support
 - **File I/O**: OpenMS MzMLFile
 - **Output**: FeatureXML (OpenMS) and TSV formats
 
@@ -35,8 +35,14 @@ This document compares the Python and C++ implementations of Biosaur2.
 | `-nm` | `-nm` | Negative mode |
 | `-nprocs` | `-threads` | Number of threads/processes |
 | `-tof` | `-tof` | TOF-specific processing |
+| `-write_hills` | `-write_hills` | Hills output |
+| `-iuse` | `-iuse` | Isotopes for intensity calc |
+| `-ignore_iso_calib` | N/A | Turn off isotope calibration (Python only) |
+| `-write_extra_details` | N/A | Extra feature details (Python only) |
+| `-profile` | N/A | Profile mode (Python only) |
 | `-o` | `-out_tsv` | TSV output path |
 | N/A | `-out` | FeatureXML output path |
+| N/A | `-out_hills` | Hills TSV output path |
 
 ## Feature Support Matrix
 
@@ -54,10 +60,11 @@ This document compares the Python and C++ implementations of Biosaur2.
 | Profile mode | ✓ | ✗ | Python only |
 | Multiprocessing | ✓ | ✓ | Both (C++ uses OpenMP) |
 | Isotope splitting (ivf) | ✓ | ✓ | Both implementations |
+| Isotopes for intensity (iuse) | ✓ | ✓ | Both implementations |
 | **Output Formats** |
 | TSV | ✓ | ✓ | Both implementations |
 | FeatureXML | ✗ | ✓ | C++ only |
-| Hills output | ✓ | ✗ | Python only |
+| Hills output | ✓ | ✓ | Both implementations |
 | **Calibration** |
 | Hill mass calibration | ✓ | ✗ | Python only |
 | Isotope mass calibration | ✓ | ✗ | Python only |
@@ -215,16 +222,17 @@ struct Hill {
   - Native compiled code
   - No Python/GIL overhead
   - Efficient memory usage
-- **Speed**: Very fast for all file sizes, single-threaded
+  - OpenMP multithreading support
+- **Speed**: Very fast for all file sizes, scales with thread count
 - **Memory**: Lower overhead, more efficient
 
 ### Estimated Performance
 
-| Dataset Size | Python (4 cores) | C++ (1 core) |
-|-------------|------------------|--------------|
-| 500 spectra | ~5 sec | ~1-2 sec |
-| 5000 spectra | ~30 sec | ~10-20 sec |
-| 50000 spectra | ~5 min | ~2-5 min |
+| Dataset Size | Python (4 cores) | C++ (1 core) | C++ (4 cores) |
+|-------------|------------------|--------------|---------------|
+| 500 spectra | ~5 sec | ~1-2 sec | ~0.5-1 sec |
+| 5000 spectra | ~30 sec | ~10-20 sec | ~5-10 sec |
+| 50000 spectra | ~5 min | ~2-5 min | ~1-2.5 min |
 
 *Note: Actual performance depends on data complexity, m/z range, and parameters*
 
