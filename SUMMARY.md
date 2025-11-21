@@ -93,6 +93,18 @@ This repository now contains a complete C++ reimplementation of the Biosaur2 fea
 - Extrapolates calibration for higher isotopes
 - Disable with -ignore_iso_calib flag
 
+✓ **Profile Mode Processing**
+- Centroids profile spectra using PeakPickerHiRes
+- Automatic detection of profile vs centroid data
+- Preserves drift time information (FAIMS)
+- High-resolution peak picking
+
+✓ **FAIMS Support**
+- Tracks drift time (compensation voltage) from spectra
+- Stores median drift time per hill
+- Outputs drift time in TSV and FeatureXML
+- Compatible with FAIMS workflows
+
 ✓ **Feature Calculation**
 - Monoisotopic m/z
 - Retention time properties
@@ -126,6 +138,7 @@ All major parameters from the Python version are supported:
 | `iuse` | Isotopes for intensity | 0 |
 | `nm` | Negative mode | false |
 | `tof` | TOF processing | false |
+| `profile` | Profile mode | false |
 | `use_hill_calib` | Hill calibration | false |
 | `ignore_iso_calib` | Ignore isotope calib | false |
 | `write_hills` | Write hills output | false |

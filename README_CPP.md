@@ -95,6 +95,7 @@ Biosaur2 -in input.mzML -out output.featureXML \
 | `-iuse` | int | 0 | Isotopes for intensity (0=mono, -1=all, 1=mono+first) |
 | `-nm` | flag | false | Negative mode |
 | `-tof` | flag | false | Enable TOF-specific intensity filtering |
+| `-profile` | flag | false | Enable profile mode (centroid using PeakPickerHiRes) |
 | `-use_hill_calib` | flag | false | Enable automatic hill mass calibration |
 | `-ignore_iso_calib` | flag | false | Disable automatic isotope mass calibration |
 | `-write_hills` | flag | false | Write intermediate hills to TSV |
@@ -144,11 +145,11 @@ This C++ implementation provides comprehensive feature detection with most Pytho
 - Hills output to TSV
 - **Automatic hill mass calibration** (use_hill_calib)
 - **Automatic isotope mass calibration** (enabled by default, disable with ignore_iso_calib)
+- **Profile mode processing** (centroid spectra using PeakPickerHiRes)
+- **FAIMS support** (drift time/compensation voltage tracking)
 
 **Not implemented (from Python version):**
-- Ion mobility support (PASEF data)
-- FAIMS support
-- Profile mode processing
+- Ion mobility support (PASEF data) - requires special handling
 - Extra feature details output
 
 ## Output Format

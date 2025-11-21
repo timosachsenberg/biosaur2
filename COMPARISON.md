@@ -39,8 +39,8 @@ This document compares the Python and C++ implementations of Biosaur2.
 | `-iuse` | `-iuse` | Isotopes for intensity calc |
 | `-ignore_iso_calib` | `-ignore_iso_calib` | Turn off isotope calibration |
 | `-use_hill_calib` | `-use_hill_calib` | Turn on hill calibration |
+| `-profile` | `-profile` | Profile mode processing |
 | `-write_extra_details` | N/A | Extra feature details (Python only) |
-| `-profile` | N/A | Profile mode (Python only) |
 | `-o` | `-out_tsv` | TSV output path |
 | N/A | `-out` | FeatureXML output path |
 | N/A | `-out_hills` | Hills TSV output path |
@@ -55,10 +55,10 @@ This document compares the Python and C++ implementations of Biosaur2.
 | Isotope detection | ✓ | ✓ | Charge state analysis |
 | Feature calculation | ✓ | ✓ | RT, m/z, intensity |
 | **Advanced Features** |
-| Ion mobility (PASEF) | ✓ | ✗ | Python only |
-| FAIMS support | ✓ | ✗ | Python only |
+| Ion mobility (PASEF) | ✓ | ✗ | Python only (requires special handling) |
+| FAIMS support | ✓ | ✓ | Both implementations (C++ tracks drift time) |
 | TOF processing | ✓ | ✓ | Both implementations |
-| Profile mode | ✓ | ✗ | Python only |
+| Profile mode | ✓ | ✓ | Both implementations (C++ uses PeakPickerHiRes) |
 | Multiprocessing | ✓ | ✓ | Both (C++ uses OpenMP) |
 | Isotope splitting (ivf) | ✓ | ✓ | Both implementations |
 | Isotopes for intensity (iuse) | ✓ | ✓ | Both implementations |

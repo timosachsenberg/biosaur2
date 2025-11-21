@@ -68,6 +68,7 @@
 #include <OpenMS/CONCEPT/Constants.h>
 #include <OpenMS/MATH/STATISTICS/BasicStatistics.h>
 #include <OpenMS/TRANSFORMATIONS/RAW2PEAK/PeakPickerHiRes.h>
+#include <OpenMS/ANALYSIS/OPENSWATH/FAIMSHelper.h>
 
 #include <algorithm>
 #include <map>
@@ -114,12 +115,14 @@ protected:
     vector<double> mz_values;      // m/z values for each peak
     vector<double> intensities;    // Intensity values for each peak
     vector<double> rt_values;      // RT values for each scan
+    vector<double> drift_times;    // Drift times (FAIMS compensation voltage)
     double mz_median;              // Median m/z value
     double rt_start;               // Start RT
     double rt_end;                 // End RT
     double rt_apex;                // RT at apex
     double intensity_apex;         // Intensity at apex
     double intensity_sum;          // Sum of intensities
+    double drift_time_median;      // Median drift time (FAIMS)
     Size length;                   // Number of scans
     Size hill_idx;                 // Unique hill identifier
   };
@@ -146,6 +149,7 @@ protected:
     Size n_isotopes;               // Number of isotopes
     Size n_scans;                  // Number of scans
     double mass_calib;             // Calibrated neutral mass
+    double drift_time;             // Drift time (FAIMS compensation voltage)
     vector<IsotopeCandidate> isotopes; // Isotope information
     Size mono_hill_idx;            // Monoisotopic hill index
   };
@@ -201,6 +205,8 @@ protected:
     registerFlag_("nm", "Negative mode (affects neutral mass calculation)", false);
     
     registerFlag_("tof", "Enable TOF-specific intensity filtering", false);
+    
+    registerFlag_("profile", "Enable profile mode processing (centroid spectra using PeakPickerHiRes)", false);
     
     registerFlag_("use_hill_calib", "Enable automatic hill mass tolerance calibration", false);
     
@@ -412,6 +418,58 @@ protected:
                     << " peaks -> " << total_peaks_after << " peaks" << endl;
   }
 
+  // Centroid profile spectra using PeakPickerHiRes
+  void centroidProfileSpectra(MSExperiment& exp)
+  {
+    OPENMS_LOG_INFO << "Centroiding profile spectra using PeakPickerHiRes..." << endl;
+    
+    PeakPickerHiRes picker;
+    Param picker_param = picker.getParameters();
+    
+    // Configure peak picker for high-resolution data
+    picker_param.setValue("signal_to_noise", 0.0); // Disable S/N filtering (we filter by intensity)
+    picker.setParameters(picker_param);
+    
+    MSExperiment centroided_exp;
+    Size total_peaks_before = 0;
+    Size total_peaks_after = 0;
+    
+    for (Size i = 0; i < exp.size(); ++i)
+    {
+      total_peaks_before += exp[i].size();
+      
+      MSSpectrum centroided_spectrum;
+      
+      // Check if spectrum is already centroided
+      if (exp[i].getType() == SpectrumSettings::CENTROID)
+      {
+        centroided_spectrum = exp[i];
+      }
+      else
+      {
+        // Pick peaks from profile spectrum
+        picker.pick(exp[i], centroided_spectrum);
+        centroided_spectrum.setRT(exp[i].getRT());
+        centroided_spectrum.setMSLevel(exp[i].getMSLevel());
+        centroided_spectrum.setType(SpectrumSettings::CENTROID);
+        
+        // Copy drift time if present (for FAIMS)
+        if (exp[i].getDriftTime() >= 0)
+        {
+          centroided_spectrum.setDriftTime(exp[i].getDriftTime());
+        }
+      }
+      
+      centroided_exp.addSpectrum(centroided_spectrum);
+      total_peaks_after += centroided_spectrum.size();
+    }
+    
+    exp = centroided_exp;
+    
+    OPENMS_LOG_INFO << "Centroiding: " << total_peaks_before 
+                    << " profile points -> " << total_peaks_after << " centroided peaks" << endl;
+  }
+
   // Cosine correlation between two RT profiles
   double cosineCorrelation(const vector<double>& intensities1, 
                           const vector<Size>& scans1,
@@ -534,6 +592,12 @@ protected:
           hill.intensities.push_back(spectrum[best_peak_idx].getIntensity());
           hill.rt_values.push_back(rt);
           
+          // Collect drift time if available (FAIMS)
+          if (spectrum.getDriftTime() >= 0)
+          {
+            hill.drift_times.push_back(spectrum.getDriftTime());
+          }
+          
           // Update median m/z
           vector<double> mz_copy = hill.mz_values;
           hill.mz_median = calculateMedian(mz_copy);
@@ -567,6 +631,12 @@ protected:
         new_hill.intensities.push_back(peak_int);
         new_hill.rt_values.push_back(rt);
         new_hill.mz_median = peak_mz;
+        
+        // Collect drift time if available (FAIMS)
+        if (spectrum.getDriftTime() >= 0)
+        {
+          new_hill.drift_times.push_back(spectrum.getDriftTime());
+        }
         
         new_active_hills[new_hill.hill_idx] = new_hill;
       }
@@ -617,6 +687,17 @@ protected:
       
       // Calculate sum intensity
       hill.intensity_sum = accumulate(hill.intensities.begin(), hill.intensities.end(), 0.0);
+      
+      // Calculate median drift time if available (FAIMS)
+      if (!hill.drift_times.empty())
+      {
+        vector<double> drift_copy = hill.drift_times;
+        hill.drift_time_median = calculateMedian(drift_copy);
+      }
+      else
+      {
+        hill.drift_time_median = -1.0; // No drift time
+      }
       
       processed_hills.push_back(hill);
     }
@@ -1082,6 +1163,7 @@ protected:
             feature.n_scans = mono_hill.length;
             feature.isotopes = isotopes;
             feature.mono_hill_idx = mono_hill.hill_idx;
+            feature.drift_time = mono_hill.drift_time_median; // FAIMS drift time
           
           // Calculate neutral mass
           double proton_mass = 1.007276;
@@ -1120,7 +1202,7 @@ protected:
     
     // Write header
     out << "massCalib\trtApex\tintensityApex\tintensitySum\tcharge\t"
-        << "nIsotopes\tnScans\tmz\trtStart\trtEnd" << endl;
+        << "nIsotopes\tnScans\tmz\trtStart\trtEnd\tFAIMS" << endl;
     
     // Write features
     for (const auto& f : features)
@@ -1134,7 +1216,8 @@ protected:
           << f.n_scans << "\t"
           << f.mz << "\t"
           << f.rt_start << "\t"
-          << f.rt_end << endl;
+          << f.rt_end << "\t"
+          << f.drift_time << endl;
     }
     
     out.close();
@@ -1170,6 +1253,12 @@ protected:
       feature.setMetaValue("n_isotopes", f.n_isotopes);
       feature.setMetaValue("n_scans", f.n_scans);
       feature.setMetaValue("intensity_sum", f.intensity_sum);
+      
+      // Add FAIMS drift time if available
+      if (f.drift_time >= 0)
+      {
+        feature.setMetaValue("FAIMS_compensation_voltage", f.drift_time);
+      }
       
       feature_map.push_back(feature);
     }
@@ -1229,6 +1318,7 @@ protected:
     int iuse = getIntOption_("iuse");
     bool negative_mode = getFlag_("nm");
     bool tof_mode = getFlag_("tof");
+    bool profile_mode = getFlag_("profile");
     bool use_hill_calib = getFlag_("use_hill_calib");
     bool ignore_iso_calib = getFlag_("ignore_iso_calib");
     bool write_hills = getFlag_("write_hills");
@@ -1272,9 +1362,26 @@ protected:
       return ILLEGAL_PARAMETERS;
     }
     
+    // Check for FAIMS data
+    auto cvs = FAIMSHelper::getCompensationVoltages(exp);
+    if (!cvs.empty())
+    {
+      OPENMS_LOG_INFO << "Detected FAIMS data with " << cvs.size() << " compensation voltage(s)" << endl;
+      for (const auto& cv : cvs)
+      {
+        OPENMS_LOG_INFO << "  CV: " << cv << " V" << endl;
+      }
+    }
+    
     //-------------------------------------------------------------
     // Pre-processing
     //-------------------------------------------------------------
+    
+    // Centroid profile spectra if requested
+    if (profile_mode)
+    {
+      centroidProfileSpectra(exp);
+    }
     
     // Apply TOF processing if requested
     if (tof_mode)
