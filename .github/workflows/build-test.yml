@@ -35,16 +35,17 @@ jobs:
     - name: Verify OpenMS installation
       shell: bash -l {0}
       run: |
-        which openms-config || echo "openms-config not found in PATH"
         conda list | grep openms
+        echo "Checking for OpenMS CMake files..."
+        find $CONDA_PREFIX -name "OpenMSConfig.cmake" 2>/dev/null | head -1 || echo "OpenMS CMake config not found in standard location"
         
     - name: Build Biosaur2 TOPP tool
       shell: bash -l {0}
       run: |
         mkdir -p build
         cd build
-        cmake ..
-        make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        cmake --build . --parallel
         
     - name: Test Biosaur2 executable
       shell: bash -l {0}
