@@ -204,6 +204,8 @@ protected:
     
     registerFlag_("use_hill_calib", "Enable automatic hill mass tolerance calibration", false);
     
+    registerFlag_("ignore_iso_calib", "Disable automatic isotope mass error calibration", false);
+    
     registerFlag_("write_hills", "Write intermediate hills to TSV file", false);
     
     registerOutputFile_("out_hills", "<file>", "", "Optional: output hills TSV file", false);
@@ -256,6 +258,73 @@ protected:
     }
     
     return result;
+  }
+
+  // Calibrate mass errors using histogram and Gaussian fitting
+  // Returns pair of (mass_shift, mass_sigma)
+  pair<double, double> calibrateMass(const vector<double>& mass_errors, double bin_width = 0.05)
+  {
+    if (mass_errors.empty()) return make_pair(0.0, 10.0);
+    
+    // Find range
+    double min_error = *min_element(mass_errors.begin(), mass_errors.end());
+    double max_error = *max_element(mass_errors.begin(), mass_errors.end());
+    double mass_left = -min_error;
+    double mass_right = max_error;
+    
+    // Create histogram
+    int n_bins = static_cast<int>((mass_left + mass_right) / bin_width);
+    if (n_bins < 5) return make_pair(0.0, 10.0); // Not enough bins
+    
+    vector<double> bin_centers;
+    vector<int> bin_counts(n_bins, 0);
+    
+    for (int i = 0; i < n_bins; ++i)
+    {
+      bin_centers.push_back(-mass_left + (i + 0.5) * bin_width);
+    }
+    
+    // Fill histogram
+    for (double error : mass_errors)
+    {
+      int bin = static_cast<int>((error + mass_left) / bin_width);
+      if (bin >= 0 && bin < n_bins)
+      {
+        bin_counts[bin]++;
+      }
+    }
+    
+    // Simple Gaussian fitting using moments
+    // Calculate weighted mean and std from histogram
+    double sum_x = 0.0, sum_x2 = 0.0, sum_w = 0.0;
+    for (size_t i = 0; i < bin_centers.size(); ++i)
+    {
+      double x = bin_centers[i];
+      double w = bin_counts[i];
+      sum_x += w * x;
+      sum_x2 += w * x * x;
+      sum_w += w;
+    }
+    
+    if (sum_w < 10) return make_pair(0.0, 10.0); // Not enough data
+    
+    double mean = sum_x / sum_w;
+    double variance = (sum_x2 / sum_w) - (mean * mean);
+    double sigma = sqrt(max(variance, 0.01)); // Ensure positive variance
+    
+    // Sanity checks
+    if (fabs(mean) >= max(mass_left, mass_right))
+    {
+      // Mean is too extreme, try with wider bins
+      return calibrateMass(mass_errors, 0.25);
+    }
+    
+    if (isinf(sigma) || isnan(sigma))
+    {
+      return make_pair(0.0, 10.0);
+    }
+    
+    return make_pair(mean, sigma);
   }
 
   // TOF-specific intensity filtering
@@ -389,11 +458,13 @@ protected:
   }
 
   // Detect hills (peaks grouped across scans)
+  // If collect_mass_diffs is true, returns mass differences for calibration
   vector<Hill> detectHills(const MSExperiment& exp, 
                           double htol_ppm,
                           double min_intensity,
                           double min_mz,
-                          double max_mz)
+                          double max_mz,
+                          vector<double>* mass_diffs = nullptr)
   {
     vector<Hill> all_hills;
     map<Size, Hill> active_hills; // Map from hill_idx to hill
@@ -449,6 +520,14 @@ protected:
         {
           // Extend hill
           matched_peaks.insert(best_peak_idx);
+          
+          // Collect mass difference for calibration if requested
+          if (mass_diffs != nullptr)
+          {
+            double mass_diff_ppm = calculatePPM(spectrum[best_peak_idx].getMZ(), target_mz);
+            mass_diffs->push_back(mass_diff_ppm);
+          }
+          
           hill.scan_indices.push_back(scan_idx);
           hill.peak_indices.push_back(best_peak_idx);
           hill.mz_values.push_back(spectrum[best_peak_idx].getMZ());
@@ -733,7 +812,8 @@ protected:
                                                int max_charge,
                                                bool negative_mode,
                                                double ivf,
-                                               int iuse)
+                                               int iuse,
+                                               bool enable_isotope_calib)
   {
     vector<PeptideFeature> features;
     set<Size> used_hills;
@@ -741,6 +821,118 @@ protected:
     OPENMS_LOG_INFO << "Detecting isotope patterns..." << endl;
     
     // Sort hills by m/z for efficient searching
+    sort(hills.begin(), hills.end(), 
+         [](const Hill& a, const Hill& b) { return a.mz_median < b.mz_median; });
+    
+    // Use OpenMS constant for C13-C12 mass difference
+    // Constants::C13C12_MASSDIFF_U is the standard mass difference in unified atomic mass units
+    const double ISOTOPE_MASSDIFF = Constants::C13C12_MASSDIFF_U;
+    
+    // Isotope mass error calibration map
+    // isotope_calib_map[isotope_number] = pair(mass_shift, mass_sigma)
+    map<int, pair<double, double>> isotope_calib_map;
+    
+    // Initialize with default values
+    for (int ic = 1; ic <= 9; ++ic)
+    {
+      isotope_calib_map[ic] = make_pair(0.0, itol_ppm);
+    }
+    
+    // First pass: collect isotope mass errors for calibration if enabled
+    if (enable_isotope_calib)
+    {
+      OPENMS_LOG_INFO << "Performing isotope calibration..." << endl;
+      
+      // Collect mass errors for each isotope position
+      map<int, vector<double>> isotope_errors;
+      for (int ic = 1; ic <= 9; ++ic)
+      {
+        isotope_errors[ic] = vector<double>();
+      }
+      
+      // Quick pass to collect isotopes
+      for (Size i = 0; i < hills.size(); ++i)
+      {
+        const Hill& mono_hill = hills[i];
+        double mono_mz = mono_hill.mz_median;
+        
+        // Try different charge states
+        for (int charge = max_charge; charge >= min_charge; --charge)
+        {
+          double mz_spacing = ISOTOPE_MASSDIFF / charge;
+          
+          // Look for first 9 isotopes
+          bool found_first = false;
+          for (int iso_num = 1; iso_num <= 9; ++iso_num)
+          {
+            double expected_mz = mono_mz + iso_num * mz_spacing;
+            double mz_tolerance = expected_mz * itol_ppm * 1e-6;
+            
+            // Search for matching hill
+            for (Size j = i + 1; j < hills.size(); ++j)
+            {
+              if (hills[j].mz_median > expected_mz + mz_tolerance) break;
+              
+              double diff = abs(hills[j].mz_median - expected_mz);
+              if (diff <= mz_tolerance)
+              {
+                // Check if this is a good match (sufficient scans)
+                if (mono_hill.length >= 3)
+                {
+                  double mass_diff_ppm = calculatePPM(hills[j].mz_median, expected_mz);
+                  isotope_errors[iso_num].push_back(mass_diff_ppm);
+                  
+                  if (iso_num == 1) found_first = true;
+                }
+                break;
+              }
+            }
+          }
+          
+          if (found_first) break; // Found valid charge state
+        }
+      }
+      
+      // Calibrate for isotopes 1-3 (most reliable)
+      for (int ic = 1; ic <= 3; ++ic)
+      {
+        if (isotope_errors[ic].size() >= 1000)
+        {
+          auto calib = calibrateMass(isotope_errors[ic]);
+          isotope_calib_map[ic] = calib;
+          
+          OPENMS_LOG_INFO << "Isotope " << ic << " calibration: shift=" 
+                          << calib.first << " ppm, sigma=" << calib.second << " ppm" << endl;
+        }
+      }
+      
+      // Extrapolate for higher isotopes
+      for (int ic = 4; ic <= 9; ++ic)
+      {
+        if (isotope_errors[ic].size() >= 1000)
+        {
+          auto calib = calibrateMass(isotope_errors[ic]);
+          isotope_calib_map[ic] = calib;
+        }
+        else if (ic > 1 && isotope_calib_map.find(ic-1) != isotope_calib_map.end())
+        {
+          // Extrapolate from previous isotope
+          auto prev = isotope_calib_map[ic-1];
+          auto prev2 = isotope_calib_map.find(ic-2) != isotope_calib_map.end() ? 
+                       isotope_calib_map[ic-2] : make_pair(0.0, itol_ppm);
+          
+          double shift_delta = prev.first - prev2.first;
+          double sigma_ratio = prev.second / max(prev2.second, 0.1);
+          
+          isotope_calib_map[ic] = make_pair(prev.first + shift_delta, prev.second * sigma_ratio);
+        }
+      }
+      
+      OPENMS_LOG_INFO << "Isotope 1 calibration: shift=" << isotope_calib_map[1].first 
+                      << " ppm, sigma=" << isotope_calib_map[1].second << " ppm" << endl;
+    }
+    
+    // Second pass (or only pass): detect features with calibrated tolerances
     sort(hills.begin(), hills.end(), 
          [](const Hill& a, const Hill& b) { return a.mz_median < b.mz_median; });
     
@@ -820,13 +1012,39 @@ protected:
         // Create feature if we have a valid pattern
         if (pattern_valid && !isotopes.empty())
         {
-          // Check if pattern should be split using ivf
-          Size isotopes_to_keep = checkIsotopeValleySplit(isotopes, hills, ivf);
-          
-          // Trim isotopes if needed
-          if (isotopes_to_keep < isotopes.size())
+          // Apply isotope calibration filtering if enabled
+          if (enable_isotope_calib)
           {
-            isotopes.resize(isotopes_to_keep);
+            vector<IsotopeCandidate> filtered_isotopes;
+            for (const auto& cand : isotopes)
+            {
+              auto calib = isotope_calib_map[cand.isotope_number];
+              double mass_shift = calib.first;
+              double mass_sigma = calib.second;
+              
+              // Keep isotope if within 5*sigma of calibrated shift
+              if (fabs(cand.mass_diff_ppm - mass_shift) <= 5.0 * mass_sigma)
+              {
+                filtered_isotopes.push_back(cand);
+              }
+              else
+              {
+                break; // Stop at first rejected isotope
+              }
+            }
+            isotopes = filtered_isotopes;
+          }
+          
+          // Check if pattern should be split using ivf
+          if (!isotopes.empty())
+          {
+            Size isotopes_to_keep = checkIsotopeValleySplit(isotopes, hills, ivf);
+            
+            // Trim isotopes if needed
+            if (isotopes_to_keep < isotopes.size())
+            {
+              isotopes.resize(isotopes_to_keep);
+            }
           }
           
           // Only create feature if we still have isotopes
@@ -1012,6 +1230,7 @@ protected:
     bool negative_mode = getFlag_("nm");
     bool tof_mode = getFlag_("tof");
     bool use_hill_calib = getFlag_("use_hill_calib");
+    bool ignore_iso_calib = getFlag_("ignore_iso_calib");
     bool write_hills = getFlag_("write_hills");
     
     // Set number of threads for OpenMP
@@ -1067,8 +1286,41 @@ protected:
     // Feature detection
     //-------------------------------------------------------------
     
-    // Step 1: Detect hills
-    vector<Hill> hills = detectHills(exp, htol, mini, minmz, maxmz);
+    // Hill calibration if requested
+    double calibrated_htol = htol;
+    if (use_hill_calib)
+    {
+      OPENMS_LOG_INFO << "Performing hill mass tolerance calibration..." << endl;
+      
+      vector<double> mass_diffs;
+      Size sample_size = min(exp.size(), Size(1000));
+      Size start_idx = (exp.size() > 1000) ? (exp.size() / 2 - 500) : 0;
+      
+      // Create a subset of the experiment for calibration
+      MSExperiment calib_exp;
+      for (Size i = start_idx; i < start_idx + sample_size && i < exp.size(); ++i)
+      {
+        calib_exp.addSpectrum(exp[i]);
+      }
+      
+      // Detect hills and collect mass differences
+      vector<Hill> calib_hills = detectHills(calib_exp, htol, mini, minmz, maxmz, &mass_diffs);
+      
+      if (!mass_diffs.empty())
+      {
+        auto calib = calibrateMass(mass_diffs);
+        double calibrated_sigma = calib.second;
+        
+        // Update htol to be the minimum of current value and 5*sigma
+        calibrated_htol = min(htol, 5.0 * calibrated_sigma);
+        
+        OPENMS_LOG_INFO << "Automatically optimized htol parameter: " 
+                        << calibrated_htol << " ppm (was " << htol << " ppm)" << endl;
+      }
+    }
+    
+    // Step 1: Detect hills with calibrated tolerance
+    vector<Hill> hills = detectHills(exp, calibrated_htol, mini, minmz, maxmz);
     
     // Step 2: Process hills (calculate properties, filter by length)
     hills = processHills(hills, minlh);
@@ -1083,8 +1335,9 @@ protected:
       writeHills(hills, hills_file);
     }
     
-    // Step 4: Detect isotope patterns
-    vector<PeptideFeature> features = detectIsotopePatterns(hills, itol, cmin, cmax, negative_mode, ivf, iuse);
+    // Step 4: Detect isotope patterns with calibration
+    bool enable_isotope_calib = !ignore_iso_calib;
+    vector<PeptideFeature> features = detectIsotopePatterns(hills, itol, cmin, cmax, negative_mode, ivf, iuse, enable_isotope_calib);
     
     //-------------------------------------------------------------
     // Writing output

@@ -37,7 +37,8 @@ This document compares the Python and C++ implementations of Biosaur2.
 | `-tof` | `-tof` | TOF-specific processing |
 | `-write_hills` | `-write_hills` | Hills output |
 | `-iuse` | `-iuse` | Isotopes for intensity calc |
-| `-ignore_iso_calib` | N/A | Turn off isotope calibration (Python only) |
+| `-ignore_iso_calib` | `-ignore_iso_calib` | Turn off isotope calibration |
+| `-use_hill_calib` | `-use_hill_calib` | Turn on hill calibration |
 | `-write_extra_details` | N/A | Extra feature details (Python only) |
 | `-profile` | N/A | Profile mode (Python only) |
 | `-o` | `-out_tsv` | TSV output path |
@@ -66,8 +67,8 @@ This document compares the Python and C++ implementations of Biosaur2.
 | FeatureXML | ✗ | ✓ | C++ only |
 | Hills output | ✓ | ✓ | Both implementations |
 | **Calibration** |
-| Hill mass calibration | ✓ | ✗ | Python only |
-| Isotope mass calibration | ✓ | ✗ | Python only |
+| Hill mass calibration | ✓ | ✓ | Both implementations |
+| Isotope mass calibration | ✓ | ✓ | Both implementations (C++ auto-enabled by default) |
 | **Constants** |
 | OpenMS constants | N/A | ✓ | C++ uses Constants::C13C12_MASSDIFF_U |
 

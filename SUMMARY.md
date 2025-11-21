@@ -78,6 +78,21 @@ This repository now contains a complete C++ reimplementation of the Biosaur2 fea
 - Auto-detection or manual thread count
 - Improved performance on multi-core systems
 
+✓ **Mass Calibration**
+- Automatic hill mass tolerance calibration (use_hill_calib)
+- Collects mass errors during hill detection
+- Fits Gaussian to determine optimal tolerance
+- Adjusts htol parameter dynamically
+
+✓ **Isotope Calibration**
+- Automatic isotope mass error calibration (enabled by default)
+- Two-pass algorithm: calibration then detection
+- Collects isotope mass errors from detected patterns
+- Fits Gaussian for each isotope position
+- Filters isotopes based on calibrated shift ± 5*sigma
+- Extrapolates calibration for higher isotopes
+- Disable with -ignore_iso_calib flag
+
 ✓ **Feature Calculation**
 - Monoisotopic m/z
 - Retention time properties
@@ -90,7 +105,6 @@ This repository now contains a complete C++ reimplementation of the Biosaur2 fea
 - Ion mobility support (PASEF)
 - FAIMS compensation voltage
 - Profile mode processing
-- Advanced mass calibration (automatic recalibration)
 
 ## Parameters
 
@@ -113,6 +127,7 @@ All major parameters from the Python version are supported:
 | `nm` | Negative mode | false |
 | `tof` | TOF processing | false |
 | `use_hill_calib` | Hill calibration | false |
+| `ignore_iso_calib` | Ignore isotope calib | false |
 | `write_hills` | Write hills output | false |
 
 ## Output Formats
