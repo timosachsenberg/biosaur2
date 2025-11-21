@@ -116,6 +116,7 @@ protected:
     vector<double> intensities;    // Intensity values for each peak
     vector<double> rt_values;      // RT values for each scan
     vector<double> drift_times;    // Drift times (FAIMS compensation voltage)
+    vector<double> ion_mobilities; // Ion mobility values (PASEF/IM data)
     double mz_median;              // Median m/z value
     double rt_start;               // Start RT
     double rt_end;                 // End RT
@@ -123,6 +124,7 @@ protected:
     double intensity_apex;         // Intensity at apex
     double intensity_sum;          // Sum of intensities
     double drift_time_median;      // Median drift time (FAIMS)
+    double ion_mobility_median;    // Median ion mobility (PASEF/IM)
     Size length;                   // Number of scans
     Size hill_idx;                 // Unique hill identifier
   };
@@ -150,6 +152,7 @@ protected:
     Size n_scans;                  // Number of scans
     double mass_calib;             // Calibrated neutral mass
     double drift_time;             // Drift time (FAIMS compensation voltage)
+    double ion_mobility;           // Ion mobility (PASEF/IM data)
     vector<IsotopeCandidate> isotopes; // Isotope information
     Size mono_hill_idx;            // Monoisotopic hill index
   };
@@ -598,6 +601,14 @@ protected:
             hill.drift_times.push_back(spectrum.getDriftTime());
           }
           
+          // Collect ion mobility if available (PASEF/IM data)
+          const auto& fda = spectrum.getFloatDataArrays();
+          auto it_im = getDataArrayByName(fda, Constants::UserParam::ION_MOBILITY);
+          if (it_im != fda.end() && best_peak_idx < it_im->size())
+          {
+            hill.ion_mobilities.push_back((*it_im)[best_peak_idx]);
+          }
+          
           // Update median m/z
           vector<double> mz_copy = hill.mz_values;
           hill.mz_median = calculateMedian(mz_copy);
@@ -636,6 +647,14 @@ protected:
         if (spectrum.getDriftTime() >= 0)
         {
           new_hill.drift_times.push_back(spectrum.getDriftTime());
+        }
+        
+        // Collect ion mobility if available (PASEF/IM data)
+        const auto& fda = spectrum.getFloatDataArrays();
+        auto it_im = getDataArrayByName(fda, Constants::UserParam::ION_MOBILITY);
+        if (it_im != fda.end() && peak_idx < it_im->size())
+        {
+          new_hill.ion_mobilities.push_back((*it_im)[peak_idx]);
         }
         
         new_active_hills[new_hill.hill_idx] = new_hill;
@@ -697,6 +716,17 @@ protected:
       else
       {
         hill.drift_time_median = -1.0; // No drift time
+      }
+      
+      // Calculate median ion mobility if available (PASEF/IM)
+      if (!hill.ion_mobilities.empty())
+      {
+        vector<double> im_copy = hill.ion_mobilities;
+        hill.ion_mobility_median = calculateMedian(im_copy);
+      }
+      else
+      {
+        hill.ion_mobility_median = -1.0; // No ion mobility
       }
       
       processed_hills.push_back(hill);
@@ -1164,6 +1194,7 @@ protected:
             feature.isotopes = isotopes;
             feature.mono_hill_idx = mono_hill.hill_idx;
             feature.drift_time = mono_hill.drift_time_median; // FAIMS drift time
+            feature.ion_mobility = mono_hill.ion_mobility_median; // IM/PASEF ion mobility
           
           // Calculate neutral mass
           double proton_mass = 1.007276;
@@ -1202,7 +1233,7 @@ protected:
     
     // Write header
     out << "massCalib\trtApex\tintensityApex\tintensitySum\tcharge\t"
-        << "nIsotopes\tnScans\tmz\trtStart\trtEnd\tFAIMS" << endl;
+        << "nIsotopes\tnScans\tmz\trtStart\trtEnd\tFAIMS\tIM" << endl;
     
     // Write features
     for (const auto& f : features)
@@ -1217,7 +1248,8 @@ protected:
           << f.mz << "\t"
           << f.rt_start << "\t"
           << f.rt_end << "\t"
-          << f.drift_time << endl;
+          << f.drift_time << "\t"
+          << f.ion_mobility << endl;
     }
     
     out.close();
@@ -1258,6 +1290,12 @@ protected:
       if (f.drift_time >= 0)
       {
         feature.setMetaValue("FAIMS_compensation_voltage", f.drift_time);
+      }
+      
+      // Add ion mobility if available (PASEF/IM)
+      if (f.ion_mobility >= 0)
+      {
+        feature.setMetaValue("ion_mobility", f.ion_mobility);
       }
       
       feature_map.push_back(feature);
@@ -1370,6 +1408,19 @@ protected:
       for (const auto& cv : cvs)
       {
         OPENMS_LOG_INFO << "  CV: " << cv << " V" << endl;
+      }
+    }
+    
+    // Check for ion mobility (PASEF/IM) data
+    bool has_ion_mobility = false;
+    if (!exp.empty())
+    {
+      const auto& fda = exp[0].getFloatDataArrays();
+      auto it_im = getDataArrayByName(fda, Constants::UserParam::ION_MOBILITY);
+      if (it_im != fda.end())
+      {
+        has_ion_mobility = true;
+        OPENMS_LOG_INFO << "Detected ion mobility (PASEF/IM) data" << endl;
       }
     }
     

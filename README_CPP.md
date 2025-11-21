@@ -147,9 +147,9 @@ This C++ implementation provides comprehensive feature detection with most Pytho
 - **Automatic isotope mass calibration** (enabled by default, disable with ignore_iso_calib)
 - **Profile mode processing** (centroid spectra using PeakPickerHiRes)
 - **FAIMS support** (drift time/compensation voltage tracking)
+- **Ion mobility support** (PASEF/IM data with ion mobility tracking)
 
 **Not implemented (from Python version):**
-- Ion mobility support (PASEF data) - requires special handling
 - Extra feature details output
 
 ## Output Format

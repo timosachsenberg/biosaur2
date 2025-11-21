@@ -55,7 +55,7 @@ This document compares the Python and C++ implementations of Biosaur2.
 | Isotope detection | ✓ | ✓ | Charge state analysis |
 | Feature calculation | ✓ | ✓ | RT, m/z, intensity |
 | **Advanced Features** |
-| Ion mobility (PASEF) | ✓ | ✗ | Python only (requires special handling) |
+| Ion mobility (PASEF) | ✓ | ✓ | Both implementations (C++ uses FloatDataArray) |
 | FAIMS support | ✓ | ✓ | Both implementations (C++ tracks drift time) |
 | TOF processing | ✓ | ✓ | Both implementations |
 | Profile mode | ✓ | ✓ | Both implementations (C++ uses PeakPickerHiRes) |

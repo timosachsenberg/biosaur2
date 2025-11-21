@@ -105,6 +105,14 @@ This repository now contains a complete C++ reimplementation of the Biosaur2 fea
 - Outputs drift time in TSV and FeatureXML
 - Compatible with FAIMS workflows
 
+✓ **Ion Mobility Support (PASEF/IM)**
+- Detects ion mobility data via FloatDataArray
+- Extracts ion mobility values using Constants::UserParam::ION_MOBILITY
+- Stores median ion mobility per hill
+- Outputs in TSV (IM column) and FeatureXML (metadata)
+- Auto-detects IM data at startup
+- Compatible with PASEF and other IM workflows
+
 ✓ **Feature Calculation**
 - Monoisotopic m/z
 - Retention time properties
