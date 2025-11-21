@@ -62,6 +62,12 @@ This repository now contains a complete C++ reimplementation of the Biosaur2 fea
 - Configurable isotope valley factor (ivf)
 - Splits patterns at local minima
 
+✓ **Isotope Intensity Calculation**
+- Configurable isotope inclusion (iuse parameter)
+- 0 = monoisotopic only (default)
+- -1 = all isotopes
+- N = monoisotopic + first N isotopes
+
 ✓ **TOF Processing**
 - Dynamic intensity threshold estimation
 - Binned m/z noise distribution
@@ -103,9 +109,11 @@ All major parameters from the Python version are supported:
 | `cmin` | Minimum charge | 1 |
 | `cmax` | Maximum charge | 6 |
 | `threads` | Number of threads | 1 |
+| `iuse` | Isotopes for intensity | 0 |
 | `nm` | Negative mode | false |
 | `tof` | TOF processing | false |
 | `use_hill_calib` | Hill calibration | false |
+| `write_hills` | Write hills output | false |
 
 ## Output Formats
 
@@ -125,6 +133,12 @@ All major parameters from the Python version are supported:
   - massCalib, rtApex, intensityApex, intensitySum
   - charge, nIsotopes, nScans
   - mz, rtStart, rtEnd
+
+### Hills TSV Output
+- Intermediate results showing detected hills
+- Useful for debugging and quality control
+- Columns: hill_idx, mz, rtStart, rtEnd, rtApex, intensityApex, intensitySum, nScans
+- Can be written with `-write_hills` flag or `-out_hills` parameter
 
 ## Quality & Security
 
