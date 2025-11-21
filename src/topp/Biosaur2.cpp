@@ -192,11 +192,12 @@ protected:
   // Calculate ppm difference between two m/z values
   double calculatePPM(double mz1, double mz2)
   {
+    if (fabs(mz2) < 1e-10) return 0.0; // Guard against division by zero
     return (mz1 - mz2) / mz2 * 1e6;
   }
 
   // Calculate median of a vector
-  double calculateMedian(vector<double>& values)
+  double calculateMedian(const vector<double>& values)
   {
     if (values.empty()) return 0.0;
     
@@ -572,6 +573,9 @@ protected:
     sort(hills.begin(), hills.end(), 
          [](const Hill& a, const Hill& b) { return a.mz_median < b.mz_median; });
     
+    // Mass difference between C12 and C13 isotopes (in Da)
+    // This is the standard isotope mass difference used in proteomics
+    // Reference: NIST Atomic Weights and Isotopic Compositions
     const double NEUTRON_MASS = 1.00286864;
     
     for (Size i = 0; i < hills.size(); ++i)

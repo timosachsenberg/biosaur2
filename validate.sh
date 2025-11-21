@@ -116,6 +116,7 @@ echo "Checking for required parameters..."
 
 PARAMS=("mini" "minmz" "maxmz" "htol" "itol" "hvf" "minlh" "cmin" "cmax")
 for param in "${PARAMS[@]}"; do
+    # Check if parameter is registered as either Double or Int option
     if grep -q "registerDoubleOption_.*\"$param\"" "$CPP_FILE" || grep -q "registerIntOption_.*\"$param\"" "$CPP_FILE"; then
         echo "✓ Parameter: $param"
     else
