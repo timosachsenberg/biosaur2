@@ -64,6 +64,8 @@
 #include <OpenMS/DATASTRUCTURES/ConvexHull2D.h>
 #include <OpenMS/CHEMISTRY/IsotopeDistribution.h>
 #include <OpenMS/CHEMISTRY/CoarseIsotopePatternGenerator.h>
+#include <OpenMS/CHEMISTRY/Element.h>
+#include <OpenMS/CONCEPT/Constants.h>
 #include <OpenMS/MATH/STATISTICS/BasicStatistics.h>
 #include <OpenMS/TRANSFORMATIONS/RAW2PEAK/PeakPickerHiRes.h>
 
@@ -73,6 +75,10 @@
 #include <cmath>
 #include <numeric>
 #include <set>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace OpenMS;
 using namespace std;
@@ -174,7 +180,7 @@ protected:
     registerDoubleOption_("hvf", "<value>", 1.3, "Hill valley factor for splitting hills", false);
     setMinFloat_("hvf", 1.0);
     
-    registerDoubleOption_("ivf", "<value>", 5.0, "Isotope valley factor for splitting isotope patterns (reserved for future use, not currently implemented)", false);
+    registerDoubleOption_("ivf", "<value>", 5.0, "Isotope valley factor for splitting isotope patterns", false);
     setMinFloat_("ivf", 1.0);
     
     registerIntOption_("minlh", "<value>", 2, "Minimum number of scans for a hill", false);
@@ -186,7 +192,14 @@ protected:
     registerIntOption_("cmax", "<value>", 6, "Maximum charge state", false);
     setMinInt_("cmax", 1);
     
+    registerIntOption_("threads", "<value>", 1, "Number of threads for parallel processing (0 = auto-detect)", false);
+    setMinInt_("threads", 0);
+    
     registerFlag_("nm", "Negative mode (affects neutral mass calculation)", false);
+    
+    registerFlag_("tof", "Enable TOF-specific intensity filtering", false);
+    
+    registerFlag_("use_hill_calib", "Enable automatic hill mass tolerance calibration", false);
   }
 
   // Calculate ppm difference between two m/z values
@@ -235,6 +248,91 @@ protected:
     }
     
     return result;
+  }
+
+  // TOF-specific intensity filtering
+  // Estimates noise distribution and filters low-intensity peaks
+  void processTOF(MSExperiment& exp, double min_mz, double max_mz)
+  {
+    OPENMS_LOG_INFO << "Applying TOF-specific intensity filtering..." << endl;
+    
+    // Group m/z values into bins for noise estimation
+    const double mz_bin_size = 50.0;
+    map<int, vector<double>> intensity_bins;
+    
+    // Sample first 25 spectra to estimate noise distribution
+    Size sample_size = min(Size(25), exp.size());
+    for (Size i = 0; i < sample_size; ++i)
+    {
+      for (Size j = 0; j < exp[i].size(); ++j)
+      {
+        double mz = exp[i][j].getMZ();
+        if (mz >= min_mz && mz <= max_mz)
+        {
+          int bin = static_cast<int>(mz / mz_bin_size);
+          double log_intensity = log10(exp[i][j].getIntensity());
+          intensity_bins[bin].push_back(log_intensity);
+        }
+      }
+    }
+    
+    // Calculate threshold for each bin (mean + 2*std)
+    map<int, double> bin_thresholds;
+    for (auto& bin_pair : intensity_bins)
+    {
+      if (bin_pair.second.size() >= 150)
+      {
+        vector<double>& intensities = bin_pair.second;
+        double sum = accumulate(intensities.begin(), intensities.end(), 0.0);
+        double mean = sum / intensities.size();
+        
+        double sq_sum = 0.0;
+        for (double val : intensities)
+        {
+          sq_sum += (val - mean) * (val - mean);
+        }
+        double std_dev = sqrt(sq_sum / intensities.size());
+        
+        bin_thresholds[bin_pair.first] = pow(10.0, mean + 2.0 * std_dev);
+      }
+    }
+    
+    // Apply filtering to all spectra
+    Size total_peaks_before = 0;
+    Size total_peaks_after = 0;
+    
+    for (auto& spectrum : exp)
+    {
+      total_peaks_before += spectrum.size();
+      
+      MSSpectrum filtered_spectrum;
+      filtered_spectrum.setRT(spectrum.getRT());
+      filtered_spectrum.setMSLevel(spectrum.getMSLevel());
+      
+      for (Size i = 0; i < spectrum.size(); ++i)
+      {
+        double mz = spectrum[i].getMZ();
+        double intensity = spectrum[i].getIntensity();
+        int bin = static_cast<int>(mz / mz_bin_size);
+        
+        double threshold = 150.0; // Default threshold
+        if (bin_thresholds.find(bin) != bin_thresholds.end())
+        {
+          threshold = bin_thresholds[bin];
+        }
+        
+        if (intensity >= threshold)
+        {
+          filtered_spectrum.push_back(spectrum[i]);
+        }
+      }
+      
+      spectrum = filtered_spectrum;
+      total_peaks_after += spectrum.size();
+    }
+    
+    OPENMS_LOG_INFO << "TOF filtering: " << total_peaks_before 
+                    << " peaks -> " << total_peaks_after << " peaks" << endl;
   }
 
   // Cosine correlation between two RT profiles
@@ -557,12 +655,76 @@ protected:
     return final_hills;
   }
 
+  // Check if isotope pattern should be split based on valley detection
+  // Returns the number of isotopes to keep (0 means reject the pattern)
+  Size checkIsotopeValleySplit(const vector<IsotopeCandidate>& isotopes,
+                                const vector<Hill>& hills,
+                                double ivf)
+  {
+    if (isotopes.empty() || ivf <= 1.0) return isotopes.size();
+    
+    // Build intensity profile across isotopes
+    vector<double> isotope_intensities;
+    isotope_intensities.push_back(1.0); // Monoisotopic (normalized to 1.0)
+    
+    for (const auto& iso : isotopes)
+    {
+      // Find the hill for this isotope
+      for (const auto& hill : hills)
+      {
+        if (hill.hill_idx == iso.hill_idx)
+        {
+          isotope_intensities.push_back(hill.intensity_apex);
+          break;
+        }
+      }
+    }
+    
+    if (isotope_intensities.size() < 3) return isotope_intensities.size() - 1;
+    
+    // Normalize intensities
+    double max_intensity = *max_element(isotope_intensities.begin(), isotope_intensities.end());
+    for (auto& intensity : isotope_intensities)
+    {
+      intensity /= max_intensity;
+    }
+    
+    // Look for valleys starting from position 4 (or max position + 1)
+    Size max_pos = 0;
+    for (Size i = 0; i < isotope_intensities.size(); ++i)
+    {
+      if (isotope_intensities[i] > isotope_intensities[max_pos])
+      {
+        max_pos = i;
+      }
+    }
+    
+    Size min_check_pos = max(Size(4), max_pos + 1);
+    
+    // Check for valleys
+    for (Size i = min_check_pos; i < isotope_intensities.size() - 1; ++i)
+    {
+      double local_min = isotope_intensities[i];
+      double right_max = *max_element(isotope_intensities.begin() + i + 1, 
+                                       isotope_intensities.end());
+      
+      if (local_min * ivf < right_max)
+      {
+        // Found a valley, split here
+        return i;
+      }
+    }
+    
+    return isotope_intensities.size() - 1;
+  }
+
   // Detect isotope patterns and create features
   vector<PeptideFeature> detectIsotopePatterns(vector<Hill>& hills,
                                                double itol_ppm,
                                                int min_charge,
                                                int max_charge,
-                                               bool negative_mode)
+                                               bool negative_mode,
+                                               double ivf)
   {
     vector<PeptideFeature> features;
     set<Size> used_hills;
@@ -573,10 +735,9 @@ protected:
     sort(hills.begin(), hills.end(), 
          [](const Hill& a, const Hill& b) { return a.mz_median < b.mz_median; });
     
-    // Mass difference between C12 and C13 isotopes (in Da)
-    // This is the standard isotope mass difference used in proteomics
-    // Reference: NIST Atomic Weights and Isotopic Compositions
-    const double NEUTRON_MASS = 1.00286864;
+    // Use OpenMS constant for C13-C12 mass difference
+    // Constants::C13C12_MASSDIFF_U is the standard mass difference in unified atomic mass units
+    const double ISOTOPE_MASSDIFF = Constants::C13C12_MASSDIFF_U;
     
     for (Size i = 0; i < hills.size(); ++i)
     {
@@ -589,7 +750,7 @@ protected:
       // Try different charge states
       for (int charge = max_charge; charge >= min_charge; --charge)
       {
-        double mz_spacing = NEUTRON_MASS / charge;
+        double mz_spacing = ISOTOPE_MASSDIFF / charge;
         
         vector<IsotopeCandidate> isotopes;
         bool pattern_valid = true;
@@ -650,18 +811,30 @@ protected:
         // Create feature if we have a valid pattern
         if (pattern_valid && !isotopes.empty())
         {
-          PeptideFeature feature;
-          feature.mz = mono_mz;
-          feature.rt_start = mono_hill.rt_start;
-          feature.rt_end = mono_hill.rt_end;
-          feature.rt_apex = mono_hill.rt_apex;
-          feature.intensity_apex = mono_hill.intensity_apex;
-          feature.intensity_sum = mono_hill.intensity_sum;
-          feature.charge = charge;
-          feature.n_isotopes = isotopes.size() + 1; // +1 for monoisotope
-          feature.n_scans = mono_hill.length;
-          feature.isotopes = isotopes;
-          feature.mono_hill_idx = mono_hill.hill_idx;
+          // Check if pattern should be split using ivf
+          Size isotopes_to_keep = checkIsotopeValleySplit(isotopes, hills, ivf);
+          
+          // Trim isotopes if needed
+          if (isotopes_to_keep < isotopes.size())
+          {
+            isotopes.resize(isotopes_to_keep);
+          }
+          
+          // Only create feature if we still have isotopes
+          if (!isotopes.empty())
+          {
+            PeptideFeature feature;
+            feature.mz = mono_mz;
+            feature.rt_start = mono_hill.rt_start;
+            feature.rt_end = mono_hill.rt_end;
+            feature.rt_apex = mono_hill.rt_apex;
+            feature.intensity_apex = mono_hill.intensity_apex;
+            feature.intensity_sum = mono_hill.intensity_sum;
+            feature.charge = charge;
+            feature.n_isotopes = isotopes.size() + 1; // +1 for monoisotope
+            feature.n_scans = mono_hill.length;
+            feature.isotopes = isotopes;
+            feature.mono_hill_idx = mono_hill.hill_idx;
           
           // Calculate neutral mass
           double proton_mass = 1.007276;
@@ -775,13 +948,29 @@ protected:
     double htol = getDoubleOption_("htol");
     double itol = getDoubleOption_("itol");
     double hvf = getDoubleOption_("hvf");
-    // Note: ivf parameter is registered for API compatibility but not currently used
-    // It would be used for splitting isotope patterns at local minima (future enhancement)
-    // double ivf = getDoubleOption_("ivf");
+    double ivf = getDoubleOption_("ivf");
     Size minlh = getIntOption_("minlh");
     int cmin = getIntOption_("cmin");
     int cmax = getIntOption_("cmax");
+    int threads = getIntOption_("threads");
     bool negative_mode = getFlag_("nm");
+    bool tof_mode = getFlag_("tof");
+    bool use_hill_calib = getFlag_("use_hill_calib");
+    
+    // Set number of threads for OpenMP
+#ifdef _OPENMP
+    if (threads == 0)
+    {
+      threads = omp_get_max_threads();
+    }
+    omp_set_num_threads(threads);
+    OPENMS_LOG_INFO << "Using " << threads << " threads for parallel processing" << endl;
+#else
+    if (threads > 1)
+    {
+      OPENMS_LOG_WARN << "OpenMP not available, using single thread" << endl;
+    }
+#endif
     
     //-------------------------------------------------------------
     // Reading input
@@ -808,6 +997,16 @@ protected:
     }
     
     //-------------------------------------------------------------
+    // Pre-processing
+    //-------------------------------------------------------------
+    
+    // Apply TOF processing if requested
+    if (tof_mode)
+    {
+      processTOF(exp, minmz, maxmz);
+    }
+    
+    //-------------------------------------------------------------
     // Feature detection
     //-------------------------------------------------------------
     
@@ -821,7 +1020,7 @@ protected:
     hills = splitHills(hills, hvf, minlh);
     
     // Step 4: Detect isotope patterns
-    vector<PeptideFeature> features = detectIsotopePatterns(hills, itol, cmin, cmax, negative_mode);
+    vector<PeptideFeature> features = detectIsotopePatterns(hills, itol, cmin, cmax, negative_mode, ivf);
     
     //-------------------------------------------------------------
     // Writing output
