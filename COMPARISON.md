@@ -28,11 +28,13 @@ This document compares the Python and C++ implementations of Biosaur2.
 | `-htol` | `-htol` | Mass accuracy for hills (ppm) |
 | `-itol` | `-itol` | Mass accuracy for isotopes (ppm) |
 | `-hvf` | `-hvf` | Hill valley factor |
-| `-ivf` | `-ivf` | Isotope valley factor (C++: parameter exists but not used) |
+| `-ivf` | `-ivf` | Isotope valley factor (both implemented) |
 | `-minlh` | `-minlh` | Minimum hill length |
 | `-cmin` | `-cmin` | Minimum charge state |
 | `-cmax` | `-cmax` | Maximum charge state |
 | `-nm` | `-nm` | Negative mode |
+| `-nprocs` | `-threads` | Number of threads/processes |
+| `-tof` | `-tof` | TOF-specific processing |
 | `-o` | `-out_tsv` | TSV output path |
 | N/A | `-out` | FeatureXML output path |
 
@@ -48,9 +50,10 @@ This document compares the Python and C++ implementations of Biosaur2.
 | **Advanced Features** |
 | Ion mobility (PASEF) | ✓ | ✗ | Python only |
 | FAIMS support | ✓ | ✗ | Python only |
-| TOF processing | ✓ | ✗ | Python only |
+| TOF processing | ✓ | ✓ | Both implementations |
 | Profile mode | ✓ | ✗ | Python only |
-| Multiprocessing | ✓ | ✗ | Python only |
+| Multiprocessing | ✓ | ✓ | Both (C++ uses OpenMP) |
+| Isotope splitting (ivf) | ✓ | ✓ | Both implementations |
 | **Output Formats** |
 | TSV | ✓ | ✓ | Both implementations |
 | FeatureXML | ✗ | ✓ | C++ only |
@@ -58,6 +61,8 @@ This document compares the Python and C++ implementations of Biosaur2.
 | **Calibration** |
 | Hill mass calibration | ✓ | ✗ | Python only |
 | Isotope mass calibration | ✓ | ✗ | Python only |
+| **Constants** |
+| OpenMS constants | N/A | ✓ | C++ uses Constants::C13C12_MASSDIFF_U |
 
 ## Algorithm Mapping
 

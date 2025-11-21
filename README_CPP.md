@@ -83,11 +83,14 @@ Biosaur2 -in input.mzML -out output.featureXML \
 | `-htol` | float | 8.0 | Mass accuracy in ppm for hills |
 | `-itol` | float | 8.0 | Mass accuracy in ppm for isotopes |
 | `-hvf` | float | 1.3 | Hill valley factor for splitting |
-| `-ivf` | float | 5.0 | Isotope valley factor (reserved, not implemented) |
+| `-ivf` | float | 5.0 | Isotope valley factor for splitting patterns |
 | `-minlh` | int | 2 | Minimum number of scans per hill |
 | `-cmin` | int | 1 | Minimum charge state |
 | `-cmax` | int | 6 | Maximum charge state |
+| `-threads` | int | 1 | Number of threads (0 = auto-detect) |
 | `-nm` | flag | false | Negative mode |
+| `-tof` | flag | false | Enable TOF-specific intensity filtering |
+| `-use_hill_calib` | flag | false | Enable automatic hill mass calibration |
 
 ## Algorithm Overview
 
@@ -117,22 +120,25 @@ Biosaur2 -in input.mzML -out output.featureXML \
 
 ## Differences from Python Implementation
 
-This C++ implementation provides the core functionality of biosaur2 with some differences:
+This C++ implementation provides comprehensive feature detection with most Python features:
 
 **Implemented:**
 - Hill detection with mass tolerance
 - Hill splitting at valleys
 - Isotope pattern recognition
+- Isotope pattern splitting (ivf)
 - Charge state determination
 - Basic feature properties
+- TOF-specific intensity filtering
+- Multithreading support (OpenMP)
+- OpenMS constants for isotope masses
 
 **Not implemented (from Python version):**
 - Ion mobility support (PASEF data)
 - FAIMS support
-- TOF-specific processing
 - Profile mode processing
-- Multiprocessing (C++ version uses single-threaded processing)
-- Advanced isotope mass calibration
+- Advanced isotope mass calibration (automatic recalibration)
+- Advanced hill mass calibration (automatic recalibration)
 
 ## Output Format
 

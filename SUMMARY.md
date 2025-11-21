@@ -53,9 +53,24 @@ This repository now contains a complete C++ reimplementation of the Biosaur2 fea
 
 ✓ **Isotope Pattern Detection**
 - Multi-charge state analysis
-- Expected m/z spacing calculation
+- Expected m/z spacing calculation using OpenMS constants
 - RT profile correlation (cosine similarity)
 - Pattern validation
+
+✓ **Isotope Pattern Splitting**
+- Valley detection in isotope intensity profiles
+- Configurable isotope valley factor (ivf)
+- Splits patterns at local minima
+
+✓ **TOF Processing**
+- Dynamic intensity threshold estimation
+- Binned m/z noise distribution
+- Mean + 2*std filtering
+
+✓ **Multithreading**
+- OpenMP support for parallel processing
+- Auto-detection or manual thread count
+- Improved performance on multi-core systems
 
 ✓ **Feature Calculation**
 - Monoisotopic m/z
@@ -68,11 +83,8 @@ This repository now contains a complete C++ reimplementation of the Biosaur2 fea
 
 - Ion mobility support (PASEF)
 - FAIMS compensation voltage
-- TOF-specific intensity filtering
 - Profile mode processing
-- Multiprocessing
-- Isotope pattern splitting (ivf parameter)
-- Advanced mass calibration
+- Advanced mass calibration (automatic recalibration)
 
 ## Parameters
 
@@ -86,13 +98,14 @@ All major parameters from the Python version are supported:
 | `htol` | Hill mass accuracy (ppm) | 8.0 |
 | `itol` | Isotope mass accuracy (ppm) | 8.0 |
 | `hvf` | Hill valley factor | 1.3 |
-| `ivf` | Isotope valley factor | 5.0* |
+| `ivf` | Isotope valley factor | 5.0 |
 | `minlh` | Minimum hill length | 2 |
 | `cmin` | Minimum charge | 1 |
 | `cmax` | Maximum charge | 6 |
+| `threads` | Number of threads | 1 |
 | `nm` | Negative mode | false |
-
-*Reserved for future implementation
+| `tof` | TOF processing | false |
+| `use_hill_calib` | Hill calibration | false |
 
 ## Output Formats
 
@@ -120,6 +133,7 @@ All major parameters from the Python version are supported:
 - ✓ Input validation
 - ✓ Memory safety (RAII, STL containers)
 - ✓ No security vulnerabilities found by CodeQL
+- ✓ OpenMS constants instead of hardcoded values
 
 ### Code Quality
 - ✓ Const-correctness for performance
@@ -127,6 +141,7 @@ All major parameters from the Python version are supported:
 - ✓ Clear code structure
 - ✓ Comprehensive comments
 - ✓ All validation checks pass
+- ✓ OpenMP support with conditional compilation
 
 ### Testing & Validation
 - Automated validation script
