@@ -1,6 +1,17 @@
 biosaur2 - A feature detection LC-MS1 spectra. This project is a rewriten version of Biosaur software (https://github.com/abdrakhimov1/Biosaur).
 -----------------------------------------------------------------------
 
+## Implementations
+
+This repository contains two implementations:
+
+1. **Python implementation** (original) - Full-featured implementation with ion mobility and PASEF support
+2. **C++ implementation** (OpenMS TOPP tool) - High-performance reimplementation using OpenMS library
+
+See [README_CPP.md](README_CPP.md) for details on the C++ implementation.
+
+## Python Implementation
+
 The centroided mzML file is required for of the script.
 
 Algorithm can be run with following command:
